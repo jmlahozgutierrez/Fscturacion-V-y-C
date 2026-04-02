@@ -1,90 +1,86 @@
 import streamlit as st
 import pandas as pd
+import json
+import os
 
-st.set_page_config(page_title="Nivel Dios TOTAL", layout="wide")
+st.set_page_config(page_title="Facturación PRO", layout="wide")
 
-st.title("💰 Facturación + IRPF Inteligente")
+st.title("💰 Facturación Clínica PRO")
+
+FILE = "datos.json"
 
 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
          "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
+# ---------------- CARGAR ----------------
+if os.path.exists(FILE):
+    with open(FILE, "r") as f:
+        data = json.load(f)
+else:
+    data = {mes:{} for mes in meses}
+
 total_ingresos = 0
 total_retenido = 0
+netos = []
 
-netos_mensuales = []
-brutos_mensuales = []
-
-# ---------------- COLMENAR ----------------
-st.header("🏥 COLMENAR")
-
+# ---------------- LOOP ----------------
 for mes in meses:
-    with st.expander(mes):
 
-        col1, col2, col3, col4 = st.columns(4)
+    st.header(f"📅 {mes}")
 
-        fg = col1.number_input("Fact General", key=mes+"fg")
-        lg = col2.number_input("Lab General", key=mes+"lg")
-        fpsi = col3.number_input("Fact PSI", key=mes+"fp")
-        lpsi = col4.number_input("Lab PSI", key=mes+"lp")
+    col1, col2 = st.columns(2)
 
-        fijo_comp = 708.21
-        var_comp = max(0,(fg - 1532 - lg)*0.35 + (fpsi - 1558.18 - lpsi)*0.3)
-        bruto_comp = fijo_comp + var_comp
+    # -------- COLMENAR (ANEXO SOLO) --------
+    with col1:
+        st.subheader("🏥 Colmenar")
 
-        fijo_anexo = 800
-        var_anexo = max(0,(fg - 1404.33 - lg)*0.35 + (fpsi - 1428.33 - lpsi)*0.3)
-        bruto_anexo = fijo_anexo + var_anexo
+        fg = st.number_input("Fact General", value=data[mes].get("fg",0.0), key=mes+"fg")
+        lg = st.number_input("Lab General", value=data[mes].get("lg",0.0), key=mes+"lg")
+        fpsi = st.number_input("Fact PSI", value=data[mes].get("fpsi",0.0), key=mes+"fpsi")
+        lpsi = st.number_input("Lab PSI", value=data[mes].get("lpsi",0.0), key=mes+"lpsi")
 
-        bruto = max(bruto_comp, bruto_anexo)
+        data[mes]["fg"] = fg
+        data[mes]["lg"] = lg
+        data[mes]["fpsi"] = fpsi
+        data[mes]["lpsi"] = lpsi
 
-        retenido = bruto * 0.30
-        neto = bruto * 0.70
+        fijo = 800
+        variable = max(0,(fg - 1404.33 - lg)*0.35 + (fpsi - 1428.33 - lpsi)*0.3)
 
-        total_ingresos += bruto
-        total_retenido += retenido
+        bruto_col = fijo + variable
+        neto_col = bruto_col * 0.70
 
-        brutos_mensuales.append(bruto)
-        netos_mensuales.append(neto)
+    # -------- VALDEMORO --------
+    with col2:
+        st.subheader("🏥 Valdemoro")
 
-        st.write(f"Neto: {round(neto,2)} €")
+        fpsi_v = st.number_input("Fact PSI", value=data[mes].get("fpsi_v",0.0), key=mes+"fpsi_v")
+        lpsi_v = st.number_input("Lab PSI", value=data[mes].get("lpsi_v",0.0), key=mes+"lpsi_v")
 
-# ---------------- VALDEMORO ----------------
-st.header("🏥 VALDEMORO")
+        data[mes]["fpsi_v"] = fpsi_v
+        data[mes]["lpsi_v"] = lpsi_v
 
-for mes in meses:
-    with st.expander(mes):
+        var = max((fpsi_v - lpsi_v - 3730),0)*0.3
+        bruto_val = var + 741
+        neto_val = bruto_val * 0.70
 
-        col1, col2 = st.columns(2)
+    # -------- TOTAL MES --------
+    total_mes = neto_col + neto_val
+    st.success(f"💰 TOTAL A COBRAR: {round(total_mes,2)} €")
 
-        fpsi = col1.number_input("Fact PSI", key=mes+"vfp")
-        lpsi = col2.number_input("Lab PSI", key=mes+"vlp")
+    total_ingresos += bruto_col + bruto_val
+    total_retenido += (bruto_col + bruto_val) * 0.30
 
-        var = max((fpsi - lpsi - 3730),0)*0.3
-        bruto = var + 741
+    netos.append(total_mes)
 
-        retenido = bruto * 0.30
-        neto = bruto * 0.70
+# ---------------- GUARDAR ----------------
+with open(FILE, "w") as f:
+    json.dump(data, f)
 
-        total_ingresos += bruto
-        total_retenido += retenido
-
-        brutos_mensuales.append(bruto)
-        netos_mensuales.append(neto)
-
-        st.write(f"Neto: {round(neto,2)} €")
-
-# ---------------- IRPF REAL ----------------
+# ---------------- IRPF ----------------
 def calcular_irpf(base):
     impuesto = 0
-
-    tramos = [
-        (12450, 0.19),
-        (20200, 0.24),
-        (35200, 0.30),
-        (60000, 0.37),
-        (300000, 0.45)
-    ]
-
+    tramos = [(12450,0.19),(20200,0.24),(35200,0.30),(60000,0.37),(300000,0.45)]
     anterior = 0
 
     for limite, tipo in tramos:
@@ -100,7 +96,7 @@ def calcular_irpf(base):
 
 irpf_real = calcular_irpf(total_ingresos)
 
-# ---------------- RESULTADOS ----------------
+# ---------------- RESUMEN ----------------
 st.header("📊 HACIENDA")
 
 col1, col2, col3 = st.columns(3)
@@ -109,38 +105,19 @@ col1.metric("Ingresos", f"{round(total_ingresos,2)} €")
 col2.metric("Retenido", f"{round(total_retenido,2)} €")
 col3.metric("IRPF real", f"{round(irpf_real,2)} €")
 
-diferencia = total_retenido - irpf_real
+dif = total_retenido - irpf_real
 
-# ---------------- ALERTA ----------------
-if diferencia > 0:
-    st.success(f"🟢 Te devolverán aprox: {round(diferencia,2)} €")
-    ajuste = (irpf_real / total_ingresos) * 100
-    st.info(f"💡 Podrías bajar retención a ~{round(ajuste,1)}%")
+if dif > 0:
+    st.success(f"🟢 Te devolverán: {round(dif,2)} €")
 else:
-    falta = abs(diferencia)
-    st.error(f"🔴 Te faltará pagar aprox: {round(falta,2)} €")
-    ajuste = (irpf_real / total_ingresos) * 100
-    st.warning(f"⚠️ Deberías subir retención a ~{round(ajuste,1)}%")
+    st.error(f"🔴 Te faltará pagar: {round(abs(dif),2)} €")
 
-# ---------------- GRAFICAS ----------------
+# ---------------- GRAFICA ----------------
 st.header("📈 Evolución mensual")
 
 df = pd.DataFrame({
-    "Mes": meses*2,
-    "Bruto": brutos_mensuales
+    "Mes": meses,
+    "Cobro": netos
 })
 
-st.line_chart(df["Bruto"])
-
-# ---------------- PREDICCION ----------------
-st.header("🔮 Predicción anual")
-
-meses_con_datos = len([x for x in brutos_mensuales if x > 0])
-
-if meses_con_datos > 0:
-    media = total_ingresos / meses_con_datos
-    prediccion = media * 12
-    irpf_pred = calcular_irpf(prediccion)
-
-    st.write(f"📊 Ingreso estimado: {round(prediccion,2)} €")
-    st.write(f"💸 IRPF estimado anual: {round(irpf_pred,2)} €")
+st.line_chart(df.set_index("Mes"))
