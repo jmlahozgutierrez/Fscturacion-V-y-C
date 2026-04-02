@@ -1,56 +1,4 @@
-import streamlit as st
-import pandas as pd
-
-st.set_page_config(page_title="Facturación + IRPF PRO", layout="wide")
-
-st.title("💰 Facturación Clínica + Control Hacienda")
-
-meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
-         "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
-
-total_ingresos = 0
-total_retenido = 0
-netos = []
-
-# ---------------- COLMENAR ----------------
-st.header("🏥 COLMENAR")
-
-for mes in meses:
-    with st.expander(mes):
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        fg = col1.number_input("Fact General", key=mes+"fg")
-        lg = col2.number_input("Lab General", key=mes+"lg")
-        fpsi = col3.number_input("Fact PSI", key=mes+"fp")
-        lpsi = col4.number_input("Lab PSI", key=mes+"lp")
-
-        fijo_comp = 708.21
-        var_comp = max(0,(fg - 1532 - lg)*0.35 + (fpsi - 1558.18 - lpsi)*0.3)
-        bruto_comp = fijo_comp + var_comp
-
-        fijo_anexo = 800
-        var_anexo = max(0,(fg - 1404.33 - lg)*0.35 + (fpsi - 1428.33 - lpsi)*0.3)
-        bruto_anexo = fijo_anexo + var_anexo
-
-        bruto = max(bruto_comp, bruto_anexo)
-
-        retenido = bruto * 0.30
-        neto = bruto * 0.70
-
-        total_ingresos += bruto
-        total_retenido += retenido
-        netos.append(neto)
-
-        st.write(f"Neto: {round(neto,2)} €")
-
-# ---------------- VALDEMORO ----------------
-st.header("🏥 VALDEMORO")
-
-for mes in meses:
-    with st.expander(mes):
-
-        col1, col2 = st.columns(2)
+col1, col2 = st.columns(2)
 
         fpsi = col1.number_input("Fact PSI", key=mes+"vfp")
         lpsi = col2.number_input("Lab PSI", key=mes+"vlp")
@@ -116,6 +64,3 @@ st.header("📈 Evolución")
 df = pd.DataFrame({
     "Mes": meses*2,
     "Neto": netos
-})
-
-st.line_chart(df["Neto"])
