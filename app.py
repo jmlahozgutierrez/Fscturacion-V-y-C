@@ -1,23 +1,35 @@
 import streamlit as st
 import pandas as pd
-import json
-import os
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 st.set_page_config(page_title="Facturación PRO", layout="wide")
 
 st.title("💰 Facturación Clínica PRO")
 
-FILE = "datos.json"
+# ---------------- CONEXIÓN GOOGLE SHEETS ----------------
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
+
+creds_dict = dict(st.secrets["gcp_service_account"])
+
+creds = ServiceAccountCredentials.from_json_keyfile_dict(
+    creds_dict, scope
+)
+
+client = gspread.authorize(creds)
+sheet = client.open("Facturacion PRO").sheet1
+
+# ---------------- LEER DATOS ----------------
+data_sheet = sheet.get_all_records()
 
 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
          "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
-# ---------------- CARGAR ----------------
-if os.path.exists(FILE):
-    with open(FILE, "r") as f:
-        data = json.load(f)
-else:
-    data = {mes:{} for mes in meses}
+# Convertimos a estructura como antes
+data = {mes:{} for mes in meses}
 
 total_ingresos = 0
 total_retenido = 0
@@ -30,19 +42,14 @@ for mes in meses:
 
     col1, col2 = st.columns(2)
 
-    # -------- COLMENAR (ANEXO SOLO) --------
+    # -------- COLMENAR --------
     with col1:
         st.subheader("🏥 Colmenar")
 
-        fg = st.number_input("Fact General", value=data[mes].get("fg",0.0), key=mes+"fg")
-        lg = st.number_input("Lab General", value=data[mes].get("lg",0.0), key=mes+"lg")
-        fpsi = st.number_input("Fact PSI", value=data[mes].get("fpsi",0.0), key=mes+"fpsi")
-        lpsi = st.number_input("Lab PSI", value=data[mes].get("lpsi",0.0), key=mes+"lpsi")
-
-        data[mes]["fg"] = fg
-        data[mes]["lg"] = lg
-        data[mes]["fpsi"] = fpsi
-        data[mes]["lpsi"] = lpsi
+        fg = st.number_input("Fact General", key=mes+"fg")
+        lg = st.number_input("Lab General", key=mes+"lg")
+        fpsi = st.number_input("Fact PSI", key=mes+"fpsi")
+        lpsi = st.number_input("Lab PSI", key=mes+"lpsi")
 
         fijo = 800
         variable = max(0,(fg - 1404.33 - lg)*0.35 + (fpsi - 1428.33 - lpsi)*0.3)
@@ -54,11 +61,8 @@ for mes in meses:
     with col2:
         st.subheader("🏥 Valdemoro")
 
-        fpsi_v = st.number_input("Fact PSI", value=data[mes].get("fpsi_v",0.0), key=mes+"fpsi_v")
-        lpsi_v = st.number_input("Lab PSI", value=data[mes].get("lpsi_v",0.0), key=mes+"lpsi_v")
-
-        data[mes]["fpsi_v"] = fpsi_v
-        data[mes]["lpsi_v"] = lpsi_v
+        fpsi_v = st.number_input("Fact PSI", key=mes+"fpsi_v")
+        lpsi_v = st.number_input("Lab PSI", key=mes+"lpsi_v")
 
         var = max((fpsi_v - lpsi_v - 3730),0)*0.3
         bruto_val = var + 741
@@ -72,10 +76,6 @@ for mes in meses:
     total_retenido += (bruto_col + bruto_val) * 0.30
 
     netos.append(total_mes)
-
-# ---------------- GUARDAR ----------------
-with open(FILE, "w") as f:
-    json.dump(data, f)
 
 # ---------------- IRPF ----------------
 def calcular_irpf(base):
@@ -95,27 +95,33 @@ def calcular_irpf(base):
     return impuesto
 
 irpf_real = calcular_irpf(total_ingresos)
-import streamlit as st
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 
-st.title("Test conexión Google Sheets")
+# ---------------- RESUMEN ----------------
+st.header("📊 HACIENDA")
 
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
-]
+col1, col2, col3 = st.columns(3)
 
-creds = ServiceAccountCredentials.from_json_keyfile_dict(
-    st.secrets["gcp_service_account"], scope
-)
+col1.metric("Ingresos", f"{round(total_ingresos,2)} €")
+col2.metric("Retenido", f"{round(total_retenido,2)} €")
+col3.metric("IRPF real", f"{round(irpf_real,2)} €")
 
-client = gspread.authorize(creds)
+dif = total_retenido - irpf_real
 
-# 👇 IMPORTANTE: pon EXACTO el nombre de tu sheet
-sheet = client.open("Facturacion PRO").sheet1
+if dif > 0:
+    st.success(f"🟢 Te devolverán: {round(dif,2)} €")
+else:
+    st.error(f"🔴 Te faltará pagar: {round(abs(dif),2)} €")
 
-data = sheet.get_all_records()
+# ---------------- GRAFICA ----------------
+st.header("📈 Evolución mensual")
 
-st.write("✅ Conectado correctamente")
-st.write(data)
+df = pd.DataFrame({
+    "Mes": meses,
+    "Cobro": netos
+})
+
+st.line_chart(df.set_index("Mes"))
+
+# ---------------- TEST CONEXIÓN ----------------
+st.write("✅ Conectado a Google Sheets")
+st.write(data_sheet)
