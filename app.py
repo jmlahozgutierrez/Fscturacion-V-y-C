@@ -23,6 +23,13 @@ client = gspread.authorize(creds)
 
 sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1JgpD7qiclpmTuLoHDWCIWdtJ5DPdZKeURFwkXv3_e7U/edit").sheet1
 
+# ---------------- CARGAR DATOS ----------------
+data_sheet = sheet.get_all_records()
+
+datos_por_mes = {}
+for row in data_sheet:
+    datos_por_mes[row["Mes"]] = row
+
 # ---------------- VARIABLES ----------------
 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
          "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
@@ -44,10 +51,10 @@ for mes in meses:
     with col1:
         st.subheader("🏥 Colmenar")
 
-        fg = st.number_input("Fact General", key=mes+"fg")
-        lg = st.number_input("Lab General", key=mes+"lg")
-        fpsi = st.number_input("Fact PSI", key=mes+"fpsi")
-        lpsi = st.number_input("Lab PSI", key=mes+"lpsi")
+        fg = st.number_input("Fact General", value=datos_por_mes.get(mes, {}).get("FG", 0), key=mes+"fg")
+        lg = st.number_input("Lab General", value=datos_por_mes.get(mes, {}).get("LG", 0), key=mes+"lg")
+        fpsi = st.number_input("Fact PSI", value=datos_por_mes.get(mes, {}).get("FPSI", 0), key=mes+"fpsi")
+        lpsi = st.number_input("Lab PSI", value=datos_por_mes.get(mes, {}).get("LPSI", 0), key=mes+"lpsi")
 
         fijo = 800
         variable = max(0,(fg - 1404.33 - lg)*0.35 + (fpsi - 1428.33 - lpsi)*0.3)
@@ -59,8 +66,8 @@ for mes in meses:
     with col2:
         st.subheader("🏥 Valdemoro")
 
-        fpsi_v = st.number_input("Fact PSI", key=mes+"fpsi_v")
-        lpsi_v = st.number_input("Lab PSI", key=mes+"lpsi_v")
+        fpsi_v = st.number_input("Fact PSI", value=datos_por_mes.get(mes, {}).get("FPSI_V", 0), key=mes+"fpsi_v")
+        lpsi_v = st.number_input("Lab PSI", value=datos_por_mes.get(mes, {}).get("LPSI_V", 0), key=mes+"lpsi_v")
 
         var = max((fpsi_v - lpsi_v - 3730),0)*0.3
         bruto_val = var + 741
@@ -74,7 +81,6 @@ for mes in meses:
 
     netos.append(total_mes)
 
-    # Guardamos datos del mes
     datos_guardar.append([
         mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
     ])
@@ -82,14 +88,11 @@ for mes in meses:
 # ---------------- BOTÓN GUARDAR ----------------
 if st.button("💾 Guardar en Google Sheets"):
 
-    sheet.clear()
-
-    sheet.append_row(["Mes","FG","LG","FPSI","LPSI","FPSI_V","LPSI_V","TOTAL"])
-
+    # NO BORRAMOS → solo añadimos
     for fila in datos_guardar:
         sheet.append_row(fila)
 
-    st.success("Datos guardados en Google Sheets 🔥")
+    st.success("Datos guardados correctamente 🔥")
 
 # ---------------- IRPF ----------------
 def calcular_irpf(base):
