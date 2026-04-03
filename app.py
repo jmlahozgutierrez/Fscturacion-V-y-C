@@ -35,12 +35,10 @@ sheet = client.open_by_url(
 data_sheet = sheet.get_all_records()
 
 datos_por_mes = {}
-fila_por_mes = {}
 
-for i, row in enumerate(data_sheet):
+for row in data_sheet:
     if row.get("Año") == year:
         datos_por_mes[row["Mes"]] = row
-        fila_por_mes[row["Mes"]] = i + 2
 
 # ---------------- VARIABLES ----------------
 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
@@ -113,17 +111,30 @@ for mes in meses:
         year, mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
     ])
 
-# ---------------- GUARDAR ----------------
+# ---------------- GUARDAR (ARREGLADO BIEN) ----------------
 if st.button("💾 Guardar"):
 
+    data_sheet = sheet.get_all_records()
+
     for fila in datos_guardar:
+
+        año = fila[0]
         mes = fila[1]
 
+        fila_encontrada = None
+
+        # 🔍 BUSCAR POR AÑO + MES
+        for i, row in enumerate(data_sheet):
+            if row.get("Año") == año and row.get("Mes") == mes:
+                fila_encontrada = i + 2
+                break
+
         try:
-            if mes in fila_por_mes:
-                fila_num = fila_por_mes[mes]
-                sheet.update(f"A{fila_num}:I{fila_num}", [fila])
+            if fila_encontrada:
+                # ACTUALIZA
+                sheet.update(f"A{fila_encontrada}:I{fila_encontrada}", [fila])
             else:
+                # CREA NUEVA
                 sheet.append_row(fila)
 
         except Exception as e:
