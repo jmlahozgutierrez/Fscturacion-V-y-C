@@ -19,18 +19,30 @@ scope = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-creds_dict = dict(st.secrets["gcp_service_account"])
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(
+    dict(st.secrets["gcp_service_account"]), scope
+)
 
 client = gspread.authorize(creds)
 
-# 🔥 IMPORTANTE: nombre EXACTO de la pestaña
 sheet = client.open_by_url(
     "https://docs.google.com/spreadsheets/d/1JgpD7qiclpmTuLoHDWCIWdtJ5DPdZKeURFwkXv3_e7U/edit"
 ).worksheet("Hoja 1")
 
+# ---------------- ASEGURAR CABECERA ----------------
+headers = ["Año","Mes","FG","LG","FPSI","LPSI","FPSI_V","LPSI_V","TOTAL"]
+
+first_row = sheet.row_values(1)
+
+if first_row != headers:
+    sheet.clear()
+    sheet.append_row(headers)
+
 # ---------------- CARGAR DATOS ----------------
-data_sheet = sheet.get_all_records()
+try:
+    data_sheet = sheet.get_all_records()
+except:
+    data_sheet = []
 
 datos_por_mes = {}
 
@@ -116,7 +128,7 @@ if st.button("💾 Guardar"):
 
     for fila in datos_guardar:
 
-        año = str(fila[0])
+        año = fila[0]
         mes = fila[1]
 
         fila_encontrada = None
@@ -126,42 +138,12 @@ if st.button("💾 Guardar"):
                 fila_encontrada = i + 2
                 break
 
-        try:
-            if fila_encontrada:
-                sheet.update(f"A{fila_encontrada}:I{fila_encontrada}", [fila])
-            else:
-                sheet.append_row(fila)
-
-        except Exception as e:
-            st.error(f"Error en {mes}")
-            st.write(e)
+        if fila_encontrada:
+            sheet.update(f"A{fila_encontrada}:I{fila_encontrada}", [fila])
+        else:
+            sheet.append_row(fila)
 
     st.success("Guardado correcto 🔥")
-
-# ---------------- IRPF ----------------
-def calcular_irpf(base):
-    impuesto = 0
-    tramos = [(12450,0.19),(20200,0.24),(35200,0.30),(60000,0.37),(300000,0.45)]
-    anterior = 0
-
-    for limite, tipo in tramos:
-        if base > limite:
-            impuesto += (limite - anterior) * tipo
-            anterior = limite
-        else:
-            impuesto += (base - anterior) * tipo
-            return impuesto
-
-    impuesto += (base - anterior) * 0.47
-    return impuesto
-
-irpf_real = calcular_irpf(total_ingresos)
-
-st.header("📊 Hacienda")
-
-st.metric("Ingresos", round(total_ingresos,2))
-st.metric("Retenido", round(total_retenido,2))
-st.metric("IRPF", round(irpf_real,2))
 
 # ---------------- GRÁFICA ----------------
 df = pd.DataFrame({
