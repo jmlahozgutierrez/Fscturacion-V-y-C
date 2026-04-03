@@ -95,7 +95,9 @@ def calcular_irpf(base):
     return impuesto
 
 irpf_real = calcular_irpf(total_ingresos)
+import streamlit as st
 
+st.write(st.secrets["gcp_service_account"])
 # ---------------- RESUMEN ----------------
 st.header("📊 HACIENDA")
 
