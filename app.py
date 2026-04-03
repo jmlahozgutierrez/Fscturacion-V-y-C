@@ -8,7 +8,7 @@ st.set_page_config(page_title="Facturación PRO", layout="wide")
 
 st.title("💰 Facturación Clínica PRO")
 
-# ---------------- AÑO AUTOMÁTICO ----------------
+# ---------------- AÑO ----------------
 current_year = datetime.now().year
 years = list(range(2024, current_year + 3))
 year = st.selectbox("📅 Año", years, index=years.index(current_year))
@@ -20,10 +20,7 @@ scope = [
 ]
 
 creds_dict = dict(st.secrets["gcp_service_account"])
-
-creds = ServiceAccountCredentials.from_json_keyfile_dict(
-    creds_dict, scope
-)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
 client = gspread.authorize(creds)
 
@@ -37,7 +34,7 @@ data_sheet = sheet.get_all_records()
 datos_por_mes = {}
 
 for row in data_sheet:
-    if row.get("Año") == year:
+    if str(row.get("Año")) == str(year):
         datos_por_mes[row["Mes"]] = row
 
 # ---------------- VARIABLES ----------------
@@ -108,33 +105,30 @@ for mes in meses:
     netos.append(total_mes)
 
     datos_guardar.append([
-        year, mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
+        str(year), mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
     ])
 
-# ---------------- GUARDAR (ARREGLADO BIEN) ----------------
+# ---------------- GUARDAR (FINAL BUENO) ----------------
 if st.button("💾 Guardar"):
 
     data_sheet = sheet.get_all_records()
 
     for fila in datos_guardar:
 
-        año = fila[0]
+        año = str(fila[0])
         mes = fila[1]
 
         fila_encontrada = None
 
-        # 🔍 BUSCAR POR AÑO + MES
         for i, row in enumerate(data_sheet):
-            if row.get("Año") == año and row.get("Mes") == mes:
+            if str(row.get("Año")) == año and row.get("Mes") == mes:
                 fila_encontrada = i + 2
                 break
 
         try:
             if fila_encontrada:
-                # ACTUALIZA
                 sheet.update(f"A{fila_encontrada}:I{fila_encontrada}", [fila])
             else:
-                # CREA NUEVA
                 sheet.append_row(fila)
 
         except Exception as e:
