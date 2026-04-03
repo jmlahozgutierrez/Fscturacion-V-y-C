@@ -95,7 +95,7 @@ def calcular_irpf(base):
     return impuesto
 
 irpf_real = calcular_irpf(total_ingresos)
-imimport streamlit as st
+import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
