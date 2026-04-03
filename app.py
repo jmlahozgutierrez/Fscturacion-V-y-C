@@ -40,7 +40,7 @@ fila_por_mes = {}
 for i, row in enumerate(data_sheet):
     if row.get("Año") == year:
         datos_por_mes[row["Mes"]] = row
-        fila_por_mes[row["Mes"]] = i + 2  # fila real en sheet
+        fila_por_mes[row["Mes"]] = i + 2
 
 # ---------------- VARIABLES ----------------
 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
@@ -60,10 +60,25 @@ for mes in meses:
     col1, col2 = st.columns(2)
 
     with col1:
-        fg = st.number_input("Fact General", value=datos_por_mes.get(mes, {}).get("FG", 0), key=mes+"fg")
-        lg = st.number_input("Lab General", value=datos_por_mes.get(mes, {}).get("LG", 0), key=mes+"lg")
-        fpsi = st.number_input("Fact PSI", value=datos_por_mes.get(mes, {}).get("FPSI", 0), key=mes+"fpsi")
-        lpsi = st.number_input("Lab PSI", value=datos_por_mes.get(mes, {}).get("LPSI", 0), key=mes+"lpsi")
+        fg = st.number_input("Fact General €",
+                             value=float(datos_por_mes.get(mes, {}).get("FG", 0)),
+                             step=0.01, format="%.2f",
+                             key=mes+"fg")
+
+        lg = st.number_input("Lab General €",
+                             value=float(datos_por_mes.get(mes, {}).get("LG", 0)),
+                             step=0.01, format="%.2f",
+                             key=mes+"lg")
+
+        fpsi = st.number_input("Fact PSI €",
+                               value=float(datos_por_mes.get(mes, {}).get("FPSI", 0)),
+                               step=0.01, format="%.2f",
+                               key=mes+"fpsi")
+
+        lpsi = st.number_input("Lab PSI €",
+                               value=float(datos_por_mes.get(mes, {}).get("LPSI", 0)),
+                               step=0.01, format="%.2f",
+                               key=mes+"lpsi")
 
         fijo = 800
         variable = max(0,(fg - 1404.33 - lg)*0.35 + (fpsi - 1428.33 - lpsi)*0.3)
@@ -72,8 +87,15 @@ for mes in meses:
         neto_col = bruto_col * 0.70
 
     with col2:
-        fpsi_v = st.number_input("Fact PSI V", value=datos_por_mes.get(mes, {}).get("FPSI_V", 0), key=mes+"fpsi_v")
-        lpsi_v = st.number_input("Lab PSI V", value=datos_por_mes.get(mes, {}).get("LPSI_V", 0), key=mes+"lpsi_v")
+        fpsi_v = st.number_input("Fact PSI V €",
+                                 value=float(datos_por_mes.get(mes, {}).get("FPSI_V", 0)),
+                                 step=0.01, format="%.2f",
+                                 key=mes+"fpsi_v")
+
+        lpsi_v = st.number_input("Lab PSI V €",
+                                 value=float(datos_por_mes.get(mes, {}).get("LPSI_V", 0)),
+                                 step=0.01, format="%.2f",
+                                 key=mes+"lpsi_v")
 
         var = max((fpsi_v - lpsi_v - 3730),0)*0.3
         bruto_val = var + 741
@@ -91,7 +113,7 @@ for mes in meses:
         year, mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
     ])
 
-# ---------------- GUARDADO CORRECTO ----------------
+# ---------------- GUARDAR ----------------
 if st.button("💾 Guardar"):
 
     for fila in datos_guardar:
@@ -99,11 +121,9 @@ if st.button("💾 Guardar"):
 
         try:
             if mes in fila_por_mes:
-                # 🔥 ACTUALIZA (CORREGIDO)
                 fila_num = fila_por_mes[mes]
                 sheet.update(f"A{fila_num}:I{fila_num}", [fila])
             else:
-                # 🔥 CREA SI NO EXISTE
                 sheet.append_row(fila)
 
         except Exception as e:
