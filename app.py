@@ -7,7 +7,10 @@ st.set_page_config(page_title="Facturación PRO", layout="wide")
 
 st.title("💰 Facturación Clínica PRO")
 
-# ---------------- CONEXIÓN GOOGLE SHEETS ----------------
+# ---------------- AÑO ----------------
+year = st.selectbox("📅 Selecciona año", [2024, 2025, 2026, 2027])
+
+# ---------------- CONEXIÓN ----------------
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive"
@@ -21,14 +24,17 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
 
 client = gspread.authorize(creds)
 
-sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1JgpD7qiclpmTuLoHDWCIWdtJ5DPdZKeURFwkXv3_e7U/edit").sheet1
+sheet = client.open_by_url(
+    "https://docs.google.com/spreadsheets/d/1JgpD7qiclpmTuLoHDWCIWdtJ5DPdZKeURFwkXv3_e7U/edit"
+).sheet1
 
 # ---------------- CARGAR DATOS ----------------
 data_sheet = sheet.get_all_records()
 
 datos_por_mes = {}
 for row in data_sheet:
-    datos_por_mes[row["Mes"]] = row
+    if row["Año"] == year:
+        datos_por_mes[row["Mes"]] = row
 
 # ---------------- VARIABLES ----------------
 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
@@ -47,7 +53,6 @@ for mes in meses:
 
     col1, col2 = st.columns(2)
 
-    # -------- COLMENAR --------
     with col1:
         st.subheader("🏥 Colmenar")
 
@@ -62,7 +67,6 @@ for mes in meses:
         bruto_col = fijo + variable
         neto_col = bruto_col * 0.70
 
-    # -------- VALDEMORO --------
     with col2:
         st.subheader("🏥 Valdemoro")
 
@@ -82,17 +86,16 @@ for mes in meses:
     netos.append(total_mes)
 
     datos_guardar.append([
-        mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
+        year, mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
     ])
 
-# ---------------- BOTÓN GUARDAR ----------------
+# ---------------- GUARDAR ----------------
 if st.button("💾 Guardar en Google Sheets"):
 
-    # NO BORRAMOS → solo añadimos
     for fila in datos_guardar:
         sheet.append_row(fila)
 
-    st.success("Datos guardados correctamente 🔥")
+    st.success("Datos guardados por año 🔥")
 
 # ---------------- IRPF ----------------
 def calcular_irpf(base):
@@ -113,7 +116,6 @@ def calcular_irpf(base):
 
 irpf_real = calcular_irpf(total_ingresos)
 
-# ---------------- RESUMEN ----------------
 st.header("📊 HACIENDA")
 
 col1, col2, col3 = st.columns(3)
