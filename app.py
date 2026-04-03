@@ -20,20 +20,18 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
 )
 
 client = gspread.authorize(creds)
-sheet = client.open("Facturacion PRO").sheet1
 
-# ---------------- LEER DATOS ----------------
-data_sheet = sheet.get_all_records()
+sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1JgpD7qiclpmTuLoHDWCIWdtJ5DPdZKeURFwkXv3_e7U/edit").sheet1
 
+# ---------------- VARIABLES ----------------
 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
          "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
-
-# Convertimos a estructura como antes
-data = {mes:{} for mes in meses}
 
 total_ingresos = 0
 total_retenido = 0
 netos = []
+
+datos_guardar = []
 
 # ---------------- LOOP ----------------
 for mes in meses:
@@ -68,7 +66,6 @@ for mes in meses:
         bruto_val = var + 741
         neto_val = bruto_val * 0.70
 
-    # -------- TOTAL MES --------
     total_mes = neto_col + neto_val
     st.success(f"💰 TOTAL A COBRAR: {round(total_mes,2)} €")
 
@@ -76,6 +73,23 @@ for mes in meses:
     total_retenido += (bruto_col + bruto_val) * 0.30
 
     netos.append(total_mes)
+
+    # Guardamos datos del mes
+    datos_guardar.append([
+        mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
+    ])
+
+# ---------------- BOTÓN GUARDAR ----------------
+if st.button("💾 Guardar en Google Sheets"):
+
+    sheet.clear()
+
+    sheet.append_row(["Mes","FG","LG","FPSI","LPSI","FPSI_V","LPSI_V","TOTAL"])
+
+    for fila in datos_guardar:
+        sheet.append_row(fila)
+
+    st.success("Datos guardados en Google Sheets 🔥")
 
 # ---------------- IRPF ----------------
 def calcular_irpf(base):
@@ -112,7 +126,7 @@ if dif > 0:
 else:
     st.error(f"🔴 Te faltará pagar: {round(abs(dif),2)} €")
 
-# ---------------- GRAFICA ----------------
+# ---------------- GRÁFICA ----------------
 st.header("📈 Evolución mensual")
 
 df = pd.DataFrame({
@@ -121,7 +135,3 @@ df = pd.DataFrame({
 })
 
 st.line_chart(df.set_index("Mes"))
-
-# ---------------- TEST CONEXIÓN ----------------
-st.write("✅ Conectado a Google Sheets")
-st.write(data_sheet)
