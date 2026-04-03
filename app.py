@@ -95,31 +95,27 @@ def calcular_irpf(base):
     return impuesto
 
 irpf_real = calcular_irpf(total_ingresos)
-import streamlit as st
+imimport streamlit as st
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
-st.write(st.secrets["gcp_service_account"])
-# ---------------- RESUMEN ----------------
-st.header("📊 HACIENDA")
+st.title("Test conexión Google Sheets")
 
-col1, col2, col3 = st.columns(3)
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
 
-col1.metric("Ingresos", f"{round(total_ingresos,2)} €")
-col2.metric("Retenido", f"{round(total_retenido,2)} €")
-col3.metric("IRPF real", f"{round(irpf_real,2)} €")
+creds = ServiceAccountCredentials.from_json_keyfile_dict(
+    st.secrets["gcp_service_account"], scope
+)
 
-dif = total_retenido - irpf_real
+client = gspread.authorize(creds)
 
-if dif > 0:
-    st.success(f"🟢 Te devolverán: {round(dif,2)} €")
-else:
-    st.error(f"🔴 Te faltará pagar: {round(abs(dif),2)} €")
+# 👇 IMPORTANTE: pon EXACTO el nombre de tu sheet
+sheet = client.open("Facturacion PRO").sheet1
 
-# ---------------- GRAFICA ----------------
-st.header("📈 Evolución mensual")
+data = sheet.get_all_records()
 
-df = pd.DataFrame({
-    "Mes": meses,
-    "Cobro": netos
-})
-
-st.line_chart(df.set_index("Mes"))
+st.write("✅ Conectado correctamente")
+st.write(data)
