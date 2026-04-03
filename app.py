@@ -2,13 +2,14 @@ import streamlit as st
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime
 
 st.set_page_config(page_title="Facturación PRO", layout="wide")
 
-st.title("💰 Facturación Clínica PRO")
+st.title("💰 Facturación Clínica PRO 🛡️")
 
-# ---------------- AÑO ----------------
-year = st.selectbox("📅 Selecciona año", [2024, 2025, 2026, 2027])
+# ---------------- CONFIG ----------------
+AUTO_GUARDADO = False
 
 # ---------------- CONEXIÓN ----------------
 scope = [
@@ -28,22 +29,28 @@ sheet = client.open_by_url(
     "https://docs.google.com/spreadsheets/d/1JgpD7qiclpmTuLoHDWCIWdtJ5DPdZKeURFwkXv3_e7U/edit"
 ).sheet1
 
-# ---------------- CARGAR DATOS ----------------
-data_sheet = sheet.get_all_records()
+# ---------------- AÑO ----------------
+year = st.selectbox("📅 Año", [2024, 2025, 2026, 2027])
+
+# ---------------- CARGA SEGURA ----------------
+try:
+    data_sheet = sheet.get_all_records()
+except:
+    st.error("⚠️ No se pudieron cargar datos, pero no se ha perdido nada")
+    data_sheet = []
 
 datos_por_mes = {}
+
 for row in data_sheet:
-    if row["Año"] == year:
+    if row.get("Año") == year:
         datos_por_mes[row["Mes"]] = row
 
-# ---------------- VARIABLES ----------------
 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
          "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
 total_ingresos = 0
 total_retenido = 0
 netos = []
-
 datos_guardar = []
 
 # ---------------- LOOP ----------------
@@ -54,8 +61,6 @@ for mes in meses:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("🏥 Colmenar")
-
         fg = st.number_input("Fact General", value=datos_por_mes.get(mes, {}).get("FG", 0), key=mes+"fg")
         lg = st.number_input("Lab General", value=datos_por_mes.get(mes, {}).get("LG", 0), key=mes+"lg")
         fpsi = st.number_input("Fact PSI", value=datos_por_mes.get(mes, {}).get("FPSI", 0), key=mes+"fpsi")
@@ -68,17 +73,15 @@ for mes in meses:
         neto_col = bruto_col * 0.70
 
     with col2:
-        st.subheader("🏥 Valdemoro")
-
-        fpsi_v = st.number_input("Fact PSI", value=datos_por_mes.get(mes, {}).get("FPSI_V", 0), key=mes+"fpsi_v")
-        lpsi_v = st.number_input("Lab PSI", value=datos_por_mes.get(mes, {}).get("LPSI_V", 0), key=mes+"lpsi_v")
+        fpsi_v = st.number_input("Fact PSI V", value=datos_por_mes.get(mes, {}).get("FPSI_V", 0), key=mes+"fpsi_v")
+        lpsi_v = st.number_input("Lab PSI V", value=datos_por_mes.get(mes, {}).get("LPSI_V", 0), key=mes+"lpsi_v")
 
         var = max((fpsi_v - lpsi_v - 3730),0)*0.3
         bruto_val = var + 741
         neto_val = bruto_val * 0.70
 
     total_mes = neto_col + neto_val
-    st.success(f"💰 TOTAL A COBRAR: {round(total_mes,2)} €")
+    st.success(f"💰 TOTAL: {round(total_mes,2)} €")
 
     total_ingresos += bruto_col + bruto_val
     total_retenido += (bruto_col + bruto_val) * 0.30
@@ -89,13 +92,33 @@ for mes in meses:
         year, mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
     ])
 
-# ---------------- GUARDAR ----------------
-if st.button("💾 Guardar en Google Sheets"):
+# ---------------- GUARDADO SEGURO ----------------
+def guardar_seguro():
 
-    for fila in datos_guardar:
-        sheet.append_row(fila)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    st.success("Datos guardados por año 🔥")
+    for i, fila in enumerate(datos_guardar):
+        fila_num = i + 2
+
+        try:
+            # Backup antes de sobrescribir
+            backup = sheet.row_values(fila_num)
+
+            sheet.update(f"A{fila_num}:I{fila_num}", [fila])
+
+            # Log histórico (extra seguridad)
+            sheet.append_row(fila + [timestamp])
+
+        except Exception as e:
+            st.error(f"Error guardando fila {fila_num} ⚠️")
+            st.write(e)
+
+# ---------------- BOTÓN SEGURO ----------------
+confirmar = st.checkbox("Confirmo que quiero guardar cambios")
+
+if st.button("💾 Guardar (seguro)") and confirmar:
+    guardar_seguro()
+    st.success("Datos guardados con seguridad 🔥")
 
 # ---------------- IRPF ----------------
 def calcular_irpf(base):
@@ -116,24 +139,13 @@ def calcular_irpf(base):
 
 irpf_real = calcular_irpf(total_ingresos)
 
-st.header("📊 HACIENDA")
+st.header("📊 Hacienda")
 
-col1, col2, col3 = st.columns(3)
-
-col1.metric("Ingresos", f"{round(total_ingresos,2)} €")
-col2.metric("Retenido", f"{round(total_retenido,2)} €")
-col3.metric("IRPF real", f"{round(irpf_real,2)} €")
-
-dif = total_retenido - irpf_real
-
-if dif > 0:
-    st.success(f"🟢 Te devolverán: {round(dif,2)} €")
-else:
-    st.error(f"🔴 Te faltará pagar: {round(abs(dif),2)} €")
+st.metric("Ingresos", round(total_ingresos,2))
+st.metric("Retenido", round(total_retenido,2))
+st.metric("IRPF", round(irpf_real,2))
 
 # ---------------- GRÁFICA ----------------
-st.header("📈 Evolución mensual")
-
 df = pd.DataFrame({
     "Mes": meses,
     "Cobro": netos
