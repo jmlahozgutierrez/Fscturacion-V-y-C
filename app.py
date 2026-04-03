@@ -6,10 +6,12 @@ from datetime import datetime
 
 st.set_page_config(page_title="Facturación PRO", layout="wide")
 
-st.title("💰 Facturación Clínica PRO 🛡️")
+st.title("💰 Facturación Clínica PRO")
 
-# ---------------- CONFIG ----------------
-AUTO_GUARDADO = False
+# ---------------- AÑO AUTOMÁTICO ----------------
+current_year = datetime.now().year
+years = list(range(2024, current_year + 3))
+year = st.selectbox("📅 Año", years, index=years.index(current_year))
 
 # ---------------- CONEXIÓN ----------------
 scope = [
@@ -29,28 +31,25 @@ sheet = client.open_by_url(
     "https://docs.google.com/spreadsheets/d/1JgpD7qiclpmTuLoHDWCIWdtJ5DPdZKeURFwkXv3_e7U/edit"
 ).sheet1
 
-# ---------------- AÑO ----------------
-year = st.selectbox("📅 Año", [2024, 2025, 2026, 2027])
-
-# ---------------- CARGA SEGURA ----------------
-try:
-    data_sheet = sheet.get_all_records()
-except:
-    st.error("⚠️ No se pudieron cargar datos, pero no se ha perdido nada")
-    data_sheet = []
+# ---------------- CARGAR DATOS ----------------
+data_sheet = sheet.get_all_records()
 
 datos_por_mes = {}
+fila_por_mes = {}
 
-for row in data_sheet:
+for i, row in enumerate(data_sheet):
     if row.get("Año") == year:
         datos_por_mes[row["Mes"]] = row
+        fila_por_mes[row["Mes"]] = i + 2  # fila real en sheet
 
+# ---------------- VARIABLES ----------------
 meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
          "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
 total_ingresos = 0
 total_retenido = 0
 netos = []
+
 datos_guardar = []
 
 # ---------------- LOOP ----------------
@@ -92,33 +91,26 @@ for mes in meses:
         year, mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
     ])
 
-# ---------------- GUARDADO SEGURO ----------------
-def guardar_seguro():
+# ---------------- GUARDADO CORRECTO ----------------
+if st.button("💾 Guardar"):
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    for i, fila in enumerate(datos_guardar):
-        fila_num = i + 2
+    for fila in datos_guardar:
+        mes = fila[1]
 
         try:
-            # Backup antes de sobrescribir
-            backup = sheet.row_values(fila_num)
-
-            sheet.update(f"A{fila_num}:I{fila_num}", [fila])
-
-            # Log histórico (extra seguridad)
-            sheet.append_row(fila + [timestamp])
+            if mes in fila_por_mes:
+                # 🔥 ACTUALIZA (CORREGIDO)
+                fila_num = fila_por_mes[mes]
+                sheet.update(f"A{fila_num}:I{fila_num}", [fila])
+            else:
+                # 🔥 CREA SI NO EXISTE
+                sheet.append_row(fila)
 
         except Exception as e:
-            st.error(f"Error guardando fila {fila_num} ⚠️")
+            st.error(f"Error en {mes}")
             st.write(e)
 
-# ---------------- BOTÓN SEGURO ----------------
-confirmar = st.checkbox("Confirmo que quiero guardar cambios")
-
-if st.button("💾 Guardar (seguro)") and confirmar:
-    guardar_seguro()
-    st.success("Datos guardados con seguridad 🔥")
+    st.success("Guardado correcto 🔥")
 
 # ---------------- IRPF ----------------
 def calcular_irpf(base):
