@@ -4,48 +4,13 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
+# ─────────────────────────────────────────
+# CONFIG
+# ─────────────────────────────────────────
+st.set_page_config(page_title="Facturación Clínica PRO", layout="wide")
 
 # ─────────────────────────────────────────
-#  CONFIG
-# ─────────────────────────────────────────
-st.set_page_config(
-    page_title="Facturación Clínica PRO",
-    layout="wide",
-    page_icon="💰"
-)
-
-# ─────────────────────────────────────────
-#  CSS
-# ─────────────────────────────────────────
-st.markdown("""
-<style>
-.stApp { background-color: #060f1a; }
-html, body, [class*="css"] { color: #c8d8e8; }
-[data-testid="stSidebar"] { background-color: #0a1929; border-right: 1px solid #1a3050; }
-[data-testid="stMetric"] {
-    background: linear-gradient(135deg, #0f2137, #0a1929);
-    border: 1px solid #1a3050;
-    border-radius: 12px;
-    padding: 16px 20px;
-}
-[data-testid="stMetricLabel"] { color: #7c8a9e !important; font-size: 11px !important; }
-[data-testid="stMetricValue"] { color: #7eb8f7 !important; }
-input[type="number"] {
-    background-color: #0d1b2a !important;
-    border: 1px solid #1e3a5f !important;
-    color: #e8f0fe !important;
-}
-.stButton > button {
-    background: #0e3020 !important;
-    border: 1px solid #2a7040 !important;
-    color: #4ac9a9 !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-# ─────────────────────────────────────────
-#  GOOGLE SHEETS
+# GOOGLE SHEETS
 # ─────────────────────────────────────────
 @st.cache_resource
 def get_sheet():
@@ -61,23 +26,19 @@ def get_sheet():
         "https://docs.google.com/spreadsheets/d/1JgpD7qiclpmTuLoHDWCIWdtJ5DPdZKeURFwkXv3_e7U/edit"
     ).worksheet("Hoja 1")
 
-
 def ensure_headers(sheet, headers):
     if sheet.row_values(1) != headers:
         sheet.clear()
         sheet.append_row(headers)
 
-
 # ─────────────────────────────────────────
-#  CÁLCULOS CORRECTOS (AQUÍ ESTÁ LA CLAVE)
+# CÁLCULOS CONTRATO
 # ─────────────────────────────────────────
 def calc_colaboradora(fg, lg, fpsi, lpsi):
     fijo = 800
-
     minimo_general  = 16852 / 11
     minimo_prostodo = 17140 / 11
 
-    # VARIABLES SEPARADAS (IMPORTANTE)
     var_gen = max(0, (fg - minimo_general)) * 0.35 - (lg * 0.35)
     var_psi = max(0, (fpsi - minimo_prostodo)) * 0.30 - (lpsi * 0.30)
 
@@ -88,10 +49,8 @@ def calc_colaboradora(fg, lg, fpsi, lpsi):
 
     return bruto, neto
 
-
 def calc_voluntaria(fpsi_v, lpsi_v):
     fijo = 800
-
     minimo_valdemoro = 41036 / 11
 
     var = max(0, (fpsi_v - minimo_valdemoro)) * 0.30 - (lpsi_v * 0.30)
@@ -102,31 +61,72 @@ def calc_voluntaria(fpsi_v, lpsi_v):
 
     return bruto, neto
 
+# ─────────────────────────────────────────
+# IRPF MADRID
+# ─────────────────────────────────────────
+def calcular_irpf_madrid(bruto, retenido, gastos=500):
+    gasto_general = 2000
+    minimo_personal = 5550
+
+    base = bruto - gastos - gasto_general - minimo_personal
+    base = max(0, base)
+
+    tramos = [
+        (12450, 0.19),
+        (20200, 0.24),
+        (35200, 0.30),
+        (60000, 0.37),
+        (9999999, 0.45)
+    ]
+
+    impuesto = 0
+    anterior = 0
+
+    for limite, tipo in tramos:
+        if base > anterior:
+            tramo = min(base, limite) - anterior
+            impuesto += tramo * tipo
+            anterior = limite
+
+    resultado = retenido - impuesto
+
+    return base, impuesto, resultado
 
 # ─────────────────────────────────────────
-#  CONSTANTES
+# TRAMOS ALERTA
+# ─────────────────────────────────────────
+def obtener_tramo(base):
+    if base <= 12450:
+        return 1
+    elif base <= 20200:
+        return 2
+    elif base <= 35200:
+        return 3
+    elif base <= 60000:
+        return 4
+    else:
+        return 5
+
+# ─────────────────────────────────────────
+# CONSTANTES
 # ─────────────────────────────────────────
 HEADERS = ["Año","Mes","FG","LG","FPSI","LPSI","FPSI_V","LPSI_V","TOTAL"]
-MESES   = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
-           "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
-
-# ─────────────────────────────────────────
-#  HEADER
-# ─────────────────────────────────────────
-col_title, col_year = st.columns([3, 1])
-with col_title:
-    st.title("💰 Facturación Clínica PRO")
-with col_year:
-    current_year = datetime.now().year
-    years = list(range(2024, current_year + 3))
-    year = st.selectbox("📅 Año", years, index=years.index(current_year))
-
-st.divider()
-
+MESES = [
+    "Enero","Febrero","Marzo","Abril","Mayo","Junio",
+    "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"
+]
 
 # ─────────────────────────────────────────
-#  DATOS
+# HEADER
+# ─────────────────────────────────────────
+st.title("💰 Facturación Clínica PRO")
+
+current_year = datetime.now().year
+year = st.selectbox("Año", list(range(2024, current_year+2)), index=1)
+
+# ─────────────────────────────────────────
+# DATOS
 # ─────────────────────────────────────────
 sheet = get_sheet()
 ensure_headers(sheet, HEADERS)
@@ -142,59 +142,75 @@ datos_por_mes = {
     if str(row.get("Año")) == str(year)
 }
 
-
 # ─────────────────────────────────────────
-#  UI
+# LOOP MESES
 # ─────────────────────────────────────────
 total_bruto = 0
 total_retenido = 0
 netos = []
-brutos_col = []
-brutos_vol = []
 datos_guardar = []
+
+tramo_anterior = 1
 
 for mes in MESES:
 
-    st.header(f"📅 {mes}")
+    st.header(mes)
 
     col1, col2 = st.columns(2)
-
     d = datos_por_mes.get(mes, {})
 
     with col1:
-        fg   = st.number_input("Fact General €", value=int(d.get("FG",0)), step=1, key=mes+"fg")
-        lg   = st.number_input("Lab General €", value=int(d.get("LG",0)), step=1, key=mes+"lg")
-        fpsi = st.number_input("Fact PSI €", value=int(d.get("FPSI",0)), step=1, key=mes+"fpsi")
-        lpsi = st.number_input("Lab PSI €", value=int(d.get("LPSI",0)), step=1, key=mes+"lpsi")
+        fg   = st.number_input("Fact General €", value=int(d.get("FG",0)), key=mes+"fg")
+        lg   = st.number_input("Lab General €", value=int(d.get("LG",0)), key=mes+"lg")
+        fpsi = st.number_input("Fact PSI €", value=int(d.get("FPSI",0)), key=mes+"fpsi")
+        lpsi = st.number_input("Lab PSI €", value=int(d.get("LPSI",0)), key=mes+"lpsi")
 
         bruto_col, neto_col = calc_colaboradora(fg, lg, fpsi, lpsi)
-        st.metric("Neto Colmenar", f"{round(neto_col)} €")
+        st.metric("Neto Colmenar", round(neto_col))
 
     with col2:
-        fpsi_v = st.number_input("Fact PSI V €", value=int(d.get("FPSI_V",0)), step=1, key=mes+"fpsi_v")
-        lpsi_v = st.number_input("Lab PSI V €", value=int(d.get("LPSI_V",0)), step=1, key=mes+"lpsi_v")
+        fpsi_v = st.number_input("Fact PSI V €", value=int(d.get("FPSI_V",0)), key=mes+"fpsi_v")
+        lpsi_v = st.number_input("Lab PSI V €", value=int(d.get("LPSI_V",0)), key=mes+"lpsi_v")
 
         bruto_vol, neto_vol = calc_voluntaria(fpsi_v, lpsi_v)
-        st.metric("Neto Valdemoro", f"{round(neto_vol)} €")
+        st.metric("Neto Valdemoro", round(neto_vol))
 
     total_mes = round(neto_col + neto_vol)
-    st.success(f"💰 TOTAL: {total_mes} €")
+    st.success(f"TOTAL: {total_mes} €")
 
     total_bruto += bruto_col + bruto_vol
     total_retenido += (bruto_col + bruto_vol) * 0.30
 
     netos.append(total_mes)
-    brutos_col.append(round(bruto_col))
-    brutos_vol.append(round(bruto_vol))
 
-    datos_guardar.append([str(year), mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes])
+    # ───────── ALERTA TRAMOS ─────────
+    base_acumulada = total_bruto - 500 - 2000 - 5550
+    base_acumulada = max(0, base_acumulada)
 
+    tramo_actual = obtener_tramo(base_acumulada)
+
+    if tramo_actual > tramo_anterior:
+        st.error(f"🚨 Has subido al tramo {tramo_actual}")
+
+    limites = [12450, 20200, 35200, 60000]
+
+    for limite in limites:
+        if base_acumulada < limite:
+            distancia = limite - base_acumulada
+            if distancia < 3000:
+                st.warning(f"⚠️ Estás a {round(distancia)} € de subir tramo")
+            break
+
+    tramo_anterior = tramo_actual
+
+    datos_guardar.append([
+        str(year), mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
+    ])
 
 # ─────────────────────────────────────────
-#  GUARDAR
+# GUARDAR
 # ─────────────────────────────────────────
-if st.button("💾 Guardar"):
-
+if st.button("Guardar"):
     fresh = sheet.get_all_records()
 
     for fila in datos_guardar:
@@ -211,21 +227,27 @@ if st.button("💾 Guardar"):
         else:
             sheet.append_row(fila)
 
-    st.success("Guardado correcto 🔥")
-
+    st.success("Guardado correcto")
 
 # ─────────────────────────────────────────
-#  RESUMEN
+# RESUMEN FINAL
 # ─────────────────────────────────────────
 st.divider()
 
-st.metric("💼 Bruto total", round(total_bruto))
-st.metric("🏦 Retenido", round(total_retenido))
-st.metric("✅ Neto total", round(total_bruto - total_retenido))
+base, irpf_real, resultado = calcular_irpf_madrid(
+    total_bruto,
+    total_retenido
+)
 
-df = pd.DataFrame({
-    "Mes": MESES,
-    "Neto": netos
-})
+st.metric("Bruto total", round(total_bruto))
+st.metric("Retenido", round(total_retenido))
+st.metric("Base imponible", round(base))
+st.metric("IRPF real", round(irpf_real))
 
+if resultado > 0:
+    st.success(f"Hacienda te devuelve: {round(resultado)} €")
+else:
+    st.error(f"A pagar: {round(abs(resultado))} €")
+
+df = pd.DataFrame({"Mes": MESES, "Neto": netos})
 st.line_chart(df.set_index("Mes"))
