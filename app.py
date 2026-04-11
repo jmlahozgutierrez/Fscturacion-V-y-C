@@ -36,9 +36,8 @@ def ensure_headers(sheet, headers):
     if not sheet.row_values(1):
         sheet.append_row(headers)
 
-
 # ─────────────────────────────────────────
-# UTILIDAD CLAVE (FIX)
+# UTIL
 # ─────────────────────────────────────────
 def safe_int(value):
     try:
@@ -46,13 +45,11 @@ def safe_int(value):
     except:
         return 0
 
-
 # ─────────────────────────────────────────
 # CÁLCULOS
 # ─────────────────────────────────────────
 def calc_colaboradora(fg, lg, fpsi, lpsi):
     fijo = 800
-
     minimo_general  = 16852 / 11
     minimo_prostodo = 17140 / 11
 
@@ -78,7 +75,6 @@ def calc_voluntaria(fpsi_v, lpsi_v):
     neto  = bruto * 0.70
 
     return bruto, neto
-
 
 # ─────────────────────────────────────────
 # IRPF
@@ -111,7 +107,6 @@ def calcular_irpf_madrid(bruto, retenido, gastos=500):
 
     return base, impuesto, resultado
 
-
 # ─────────────────────────────────────────
 # TRAMOS
 # ─────────────────────────────────────────
@@ -127,7 +122,6 @@ def obtener_tramo(base):
     else:
         return 5
 
-
 # ─────────────────────────────────────────
 # CONSTANTES
 # ─────────────────────────────────────────
@@ -138,7 +132,6 @@ MESES = [
     "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"
 ]
 
-
 # ─────────────────────────────────────────
 # HEADER
 # ─────────────────────────────────────────
@@ -147,9 +140,12 @@ st.title("💰 Facturación Clínica PRO")
 current_year = datetime.now().year
 year = st.selectbox("Año", list(range(2024, current_year+2)), index=1)
 
+if st.button("🔄 Recargar datos"):
+    st.session_state.clear()
+    st.rerun()
 
 # ─────────────────────────────────────────
-# DATOS (FIX TOTAL)
+# DATOS
 # ─────────────────────────────────────────
 sheet = get_sheet()
 ensure_headers(sheet, HEADERS)
@@ -169,7 +165,6 @@ for row in data_sheet:
     if año_sheet == year and mes_sheet:
         datos_por_mes[mes_sheet] = row
 
-
 # ─────────────────────────────────────────
 # LOOP MESES
 # ─────────────────────────────────────────
@@ -187,18 +182,44 @@ for mes in MESES:
     col1, col2 = st.columns(2)
     d = datos_por_mes.get(mes.lower(), {})
 
+    # ───── COLMENAR ─────
     with col1:
-        fg   = st.number_input("Fact General €", value=safe_int(d.get("FG",0)), key=mes+"fg")
-        lg   = st.number_input("Lab General €", value=safe_int(d.get("LG",0)), key=mes+"lg")
-        fpsi = st.number_input("Fact PSI €", value=safe_int(d.get("FPSI",0)), key=mes+"fpsi")
-        lpsi = st.number_input("Lab PSI €", value=safe_int(d.get("LPSI",0)), key=mes+"lpsi")
+
+        key_fg = mes+"fg"
+        if key_fg not in st.session_state:
+            st.session_state[key_fg] = safe_int(d.get("FG",0))
+        fg = st.number_input("Fact General €", key=key_fg)
+
+        key_lg = mes+"lg"
+        if key_lg not in st.session_state:
+            st.session_state[key_lg] = safe_int(d.get("LG",0))
+        lg = st.number_input("Lab General €", key=key_lg)
+
+        key_fpsi = mes+"fpsi"
+        if key_fpsi not in st.session_state:
+            st.session_state[key_fpsi] = safe_int(d.get("FPSI",0))
+        fpsi = st.number_input("Fact PSI €", key=key_fpsi)
+
+        key_lpsi = mes+"lpsi"
+        if key_lpsi not in st.session_state:
+            st.session_state[key_lpsi] = safe_int(d.get("LPSI",0))
+        lpsi = st.number_input("Lab PSI €", key=key_lpsi)
 
         bruto_col, neto_col = calc_colaboradora(fg, lg, fpsi, lpsi)
         st.metric("Neto Colmenar", round(neto_col))
 
+    # ───── VALDEMORO ─────
     with col2:
-        fpsi_v = st.number_input("Fact PSI V €", value=safe_int(d.get("FPSI_V",0)), key=mes+"fpsi_v")
-        lpsi_v = st.number_input("Lab PSI V €", value=safe_int(d.get("LPSI_V",0)), key=mes+"lpsi_v")
+
+        key_fpsi_v = mes+"fpsi_v"
+        if key_fpsi_v not in st.session_state:
+            st.session_state[key_fpsi_v] = safe_int(d.get("FPSI_V",0))
+        fpsi_v = st.number_input("Fact PSI V €", key=key_fpsi_v)
+
+        key_lpsi_v = mes+"lpsi_v"
+        if key_lpsi_v not in st.session_state:
+            st.session_state[key_lpsi_v] = safe_int(d.get("LPSI_V",0))
+        lpsi_v = st.number_input("Lab PSI V €", key=key_lpsi_v)
 
         bruto_vol, neto_vol = calc_voluntaria(fpsi_v, lpsi_v)
         st.metric("Neto Valdemoro", round(neto_vol))
@@ -211,7 +232,7 @@ for mes in MESES:
 
     netos.append(total_mes)
 
-    # ALERTAS
+    # ALERTA TRAMOS
     base_acumulada = total_bruto - 500 - 2000 - 5550
     base_acumulada = max(0, base_acumulada)
 
@@ -235,7 +256,6 @@ for mes in MESES:
         str(year), mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
     ])
 
-
 # ─────────────────────────────────────────
 # GUARDAR
 # ─────────────────────────────────────────
@@ -258,7 +278,6 @@ if st.button("Guardar"):
             sheet.append_row(fila)
 
     st.success("Guardado correcto")
-
 
 # ─────────────────────────────────────────
 # RESUMEN
