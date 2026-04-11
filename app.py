@@ -83,7 +83,7 @@ def safe_int(x):
 
 def calc_colmenar(fg, lg, fpsi, lpsi):
 
-    fijo = 900
+    fijo = 800  # ✅ CORREGIDO
 
     minimo_general  = 16852 / 11
     minimo_prosto   = 17140 / 11
@@ -100,7 +100,8 @@ def calc_colmenar(fg, lg, fpsi, lpsi):
 
 def calc_valdemoro(fpsi_v, lpsi_v):
 
-    fijo = 900
+    fijo = 800  # ✅ CORREGIDO
+
     minimo = 41036 / 11
 
     var = max(0, fpsi_v - minimo) * 0.30 - (lpsi_v * 0.30)
