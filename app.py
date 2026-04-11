@@ -4,16 +4,13 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
-# ─────────────────────────────────────────
-# CONFIG
-# ─────────────────────────────────────────
 st.set_page_config(page_title="Facturación Clínica PRO", layout="wide")
 
 # ─────────────────────────────────────────
-# GOOGLE SHEETS
+# GOOGLE SHEETS (LECTURA ROBUSTA)
 # ─────────────────────────────────────────
 @st.cache_resource
-def get_sheet():
+def get_data():
     scope = [
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive"
@@ -25,279 +22,91 @@ def get_sheet():
 
     client = gspread.authorize(creds)
 
-    spreadsheet = client.open_by_url(
+    sheet = client.open_by_url(
         "https://docs.google.com/spreadsheets/d/1JgpD7qiclpmTuLoHDWCIWdtJ5DPdZKeURFwkXv3_e7U/edit"
-    )
+    ).sheet1
 
-    return spreadsheet.sheet1
+    data = sheet.get_all_values()
 
+    headers = data[0]
+    rows = data[1:]
 
-def ensure_headers(sheet, headers):
-    if not sheet.row_values(1):
-        sheet.append_row(headers)
+    df = pd.DataFrame(rows, columns=headers)
+
+    return df, sheet
 
 # ─────────────────────────────────────────
 # UTIL
 # ─────────────────────────────────────────
-def safe_int(value):
+def safe_int(x):
     try:
-        return int(float(value))
+        return int(float(x))
     except:
         return 0
 
 # ─────────────────────────────────────────
-# CÁLCULOS
-# ─────────────────────────────────────────
-def calc_colaboradora(fg, lg, fpsi, lpsi):
-    fijo = 800
-    minimo_general  = 16852 / 11
-    minimo_prostodo = 17140 / 11
-
-    var_gen = max(0, (fg - minimo_general)) * 0.35 - (lg * 0.35)
-    var_psi = max(0, (fpsi - minimo_prostodo)) * 0.30 - (lpsi * 0.30)
-
-    variable = max(0, var_gen) + max(0, var_psi)
-
-    bruto = fijo + variable
-    neto  = bruto * 0.70
-
-    return bruto, neto
-
-
-def calc_voluntaria(fpsi_v, lpsi_v):
-    fijo = 800
-    minimo_valdemoro = 41036 / 11
-
-    var = max(0, (fpsi_v - minimo_valdemoro)) * 0.30 - (lpsi_v * 0.30)
-    variable = max(0, var)
-
-    bruto = fijo + variable
-    neto  = bruto * 0.70
-
-    return bruto, neto
-
-# ─────────────────────────────────────────
-# IRPF
-# ─────────────────────────────────────────
-def calcular_irpf_madrid(bruto, retenido, gastos=500):
-    gasto_general = 2000
-    minimo_personal = 5550
-
-    base = bruto - gastos - gasto_general - minimo_personal
-    base = max(0, base)
-
-    tramos = [
-        (12450, 0.19),
-        (20200, 0.24),
-        (35200, 0.30),
-        (60000, 0.37),
-        (9999999, 0.45)
-    ]
-
-    impuesto = 0
-    anterior = 0
-
-    for limite, tipo in tramos:
-        if base > anterior:
-            tramo = min(base, limite) - anterior
-            impuesto += tramo * tipo
-            anterior = limite
-
-    resultado = retenido - impuesto
-
-    return base, impuesto, resultado
-
-# ─────────────────────────────────────────
-# TRAMOS
-# ─────────────────────────────────────────
-def obtener_tramo(base):
-    if base <= 12450:
-        return 1
-    elif base <= 20200:
-        return 2
-    elif base <= 35200:
-        return 3
-    elif base <= 60000:
-        return 4
-    else:
-        return 5
-
-# ─────────────────────────────────────────
-# CONSTANTES
-# ─────────────────────────────────────────
-HEADERS = ["Año","Mes","FG","LG","FPSI","LPSI","FPSI_V","LPSI_V","TOTAL"]
-
-MESES = [
-    "Enero","Febrero","Marzo","Abril","Mayo","Junio",
-    "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"
-]
-
-# ─────────────────────────────────────────
-# HEADER
+# APP
 # ─────────────────────────────────────────
 st.title("💰 Facturación Clínica PRO")
 
 current_year = datetime.now().year
 year = st.selectbox("Año", list(range(2024, current_year+2)), index=1)
 
-if st.button("🔄 Recargar datos"):
-    st.session_state.clear()
-    st.rerun()
+df, sheet = get_data()
 
-# ─────────────────────────────────────────
-# DATOS
-# ─────────────────────────────────────────
-sheet = get_sheet()
-ensure_headers(sheet, HEADERS)
+# 🔥 LIMPIEZA CLAVE
+df["Año"] = df["Año"].apply(safe_int)
+df["Mes"] = df["Mes"].astype(str).str.strip().str.lower()
 
-data_sheet = sheet.get_all_records()
+df = df[df["Año"] == year]
 
-datos_por_mes = {}
+datos_por_mes = {
+    row["Mes"]: row for _, row in df.iterrows()
+}
 
-for row in data_sheet:
-    try:
-        año_sheet = int(float(row.get("Año", 0)))
-    except:
-        continue
+MESES = [
+    "enero","febrero","marzo","abril","mayo","junio",
+    "julio","agosto","septiembre","octubre","noviembre","diciembre"
+]
 
-    mes_sheet = str(row.get("Mes", "")).strip().lower()
-
-    if año_sheet == year and mes_sheet:
-        datos_por_mes[mes_sheet] = row
-
-# ─────────────────────────────────────────
-# LOOP MESES
-# ─────────────────────────────────────────
 total_bruto = 0
 total_retenido = 0
 netos = []
 datos_guardar = []
 
-tramo_anterior = 1
-
 for mes in MESES:
 
-    st.header(mes)
+    st.header(mes.capitalize())
+
+    d = datos_por_mes.get(mes, {})
 
     col1, col2 = st.columns(2)
-    d = datos_por_mes.get(mes.lower(), {})
 
-    # ───── COLMENAR ─────
     with col1:
+        fg = st.number_input("Fact General", value=safe_int(d.get("FG",0)), key=mes+"fg")
+        lg = st.number_input("Lab General", value=safe_int(d.get("LG",0)), key=mes+"lg")
+        fpsi = st.number_input("Fact PSI", value=safe_int(d.get("FPSI",0)), key=mes+"fpsi")
+        lpsi = st.number_input("Lab PSI", value=safe_int(d.get("LPSI",0)), key=mes+"lpsi")
 
-        key_fg = mes+"fg"
-        if key_fg not in st.session_state:
-            st.session_state[key_fg] = safe_int(d.get("FG",0))
-        fg = st.number_input("Fact General €", key=key_fg)
-
-        key_lg = mes+"lg"
-        if key_lg not in st.session_state:
-            st.session_state[key_lg] = safe_int(d.get("LG",0))
-        lg = st.number_input("Lab General €", key=key_lg)
-
-        key_fpsi = mes+"fpsi"
-        if key_fpsi not in st.session_state:
-            st.session_state[key_fpsi] = safe_int(d.get("FPSI",0))
-        fpsi = st.number_input("Fact PSI €", key=key_fpsi)
-
-        key_lpsi = mes+"lpsi"
-        if key_lpsi not in st.session_state:
-            st.session_state[key_lpsi] = safe_int(d.get("LPSI",0))
-        lpsi = st.number_input("Lab PSI €", key=key_lpsi)
-
-        bruto_col, neto_col = calc_colaboradora(fg, lg, fpsi, lpsi)
-        st.metric("Neto Colmenar", round(neto_col))
-
-    # ───── VALDEMORO ─────
     with col2:
+        fpsi_v = st.number_input("Fact PSI V", value=safe_int(d.get("FPSI_V",0)), key=mes+"fpsi_v")
+        lpsi_v = st.number_input("Lab PSI V", value=safe_int(d.get("LPSI_V",0)), key=mes+"lpsi_v")
 
-        key_fpsi_v = mes+"fpsi_v"
-        if key_fpsi_v not in st.session_state:
-            st.session_state[key_fpsi_v] = safe_int(d.get("FPSI_V",0))
-        fpsi_v = st.number_input("Fact PSI V €", key=key_fpsi_v)
+    # cálculo simple para probar
+    total_mes = fg - lg + fpsi - lpsi + fpsi_v - lpsi_v
 
-        key_lpsi_v = mes+"lpsi_v"
-        if key_lpsi_v not in st.session_state:
-            st.session_state[key_lpsi_v] = safe_int(d.get("LPSI_V",0))
-        lpsi_v = st.number_input("Lab PSI V €", key=key_lpsi_v)
+    st.success(f"TOTAL: {total_mes}")
 
-        bruto_vol, neto_vol = calc_voluntaria(fpsi_v, lpsi_v)
-        st.metric("Neto Valdemoro", round(neto_vol))
-
-    total_mes = round(neto_col + neto_vol)
-    st.success(f"TOTAL: {total_mes} €")
-
-    total_bruto += bruto_col + bruto_vol
-    total_retenido += (bruto_col + bruto_vol) * 0.30
-
-    netos.append(total_mes)
-
-    # ALERTA TRAMOS
-    base_acumulada = total_bruto - 500 - 2000 - 5550
-    base_acumulada = max(0, base_acumulada)
-
-    tramo_actual = obtener_tramo(base_acumulada)
-
-    if tramo_actual > tramo_anterior:
-        st.error(f"🚨 Has subido al tramo {tramo_actual}")
-
-    limites = [12450, 20200, 35200, 60000]
-
-    for limite in limites:
-        if base_acumulada < limite:
-            distancia = limite - base_acumulada
-            if distancia < 3000:
-                st.warning(f"⚠️ Estás a {round(distancia)} € de subir tramo")
-            break
-
-    tramo_anterior = tramo_actual
-
-    datos_guardar.append([
-        str(year), mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
-    ])
+    datos_guardar.append([year, mes.capitalize(), fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes])
 
 # ─────────────────────────────────────────
 # GUARDAR
 # ─────────────────────────────────────────
 if st.button("Guardar"):
-
-    fresh = sheet.get_all_records()
-
     for fila in datos_guardar:
-        año, mes = fila[0], fila[1]
+        sheet.append_row(fila)
 
-        idx = next(
-            (i+2 for i, r in enumerate(fresh)
-             if str(r.get("Año")) == año and str(r.get("Mes")).strip().lower() == mes.lower()),
-            None
-        )
+    st.success("Guardado")
 
-        if idx:
-            sheet.update(f"A{idx}:I{idx}", [fila])
-        else:
-            sheet.append_row(fila)
-
-    st.success("Guardado correcto")
-
-# ─────────────────────────────────────────
-# RESUMEN
-# ─────────────────────────────────────────
-st.divider()
-
-base, irpf_real, resultado = calcular_irpf_madrid(
-    total_bruto,
-    total_retenido
-)
-
-st.metric("Bruto total", round(total_bruto))
-st.metric("Retenido", round(total_retenido))
-st.metric("Base imponible", round(base))
-st.metric("IRPF real", round(irpf_real))
-
-if resultado > 0:
-    st.success(f"Hacienda te devuelve: {round(resultado)} €")
-else:
-    st.error(f"A pagar: {round(abs(resultado))} €")
-
-df = pd.DataFrame({"Mes": MESES, "Neto": netos})
-st.line_chart(df.set_index("Mes"))
+# DEBUG
+st.write("Datos cargados:", datos_por_mes)
