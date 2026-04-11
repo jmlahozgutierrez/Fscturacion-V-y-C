@@ -27,8 +27,7 @@ def get_sheet():
     ).worksheet("Hoja 1")
 
 def ensure_headers(sheet, headers):
-    if sheet.row_values(1) != headers:
-        sheet.clear()
+    if not sheet.row_values(1):
         sheet.append_row(headers)
 
 # ─────────────────────────────────────────
@@ -126,7 +125,7 @@ current_year = datetime.now().year
 year = st.selectbox("Año", list(range(2024, current_year+2)), index=1)
 
 # ─────────────────────────────────────────
-# DATOS
+# DATOS (FIX IMPORTANTE)
 # ─────────────────────────────────────────
 sheet = get_sheet()
 ensure_headers(sheet, HEADERS)
@@ -136,11 +135,21 @@ try:
 except:
     data_sheet = []
 
-datos_por_mes = {
-    row["Mes"]: row
-    for row in data_sheet
-    if str(row.get("Año")) == str(year)
-}
+datos_por_mes = {}
+
+for row in data_sheet:
+    try:
+        año_sheet = int(float(row.get("Año", 0)))
+    except:
+        continue
+
+    mes_sheet = str(row.get("Mes", "")).strip().lower()
+
+    if año_sheet == year and mes_sheet:
+        datos_por_mes[mes_sheet] = row
+
+# DEBUG opcional
+# st.write(datos_por_mes.keys())
 
 # ─────────────────────────────────────────
 # LOOP MESES
@@ -157,7 +166,7 @@ for mes in MESES:
     st.header(mes)
 
     col1, col2 = st.columns(2)
-    d = datos_por_mes.get(mes, {})
+    d = datos_por_mes.get(mes.lower(), {})
 
     with col1:
         fg   = st.number_input("Fact General €", value=int(d.get("FG",0)), key=mes+"fg")
@@ -218,7 +227,7 @@ if st.button("Guardar"):
 
         idx = next(
             (i+2 for i, r in enumerate(fresh)
-             if str(r.get("Año")) == año and r.get("Mes") == mes),
+             if str(r.get("Año")) == año and str(r.get("Mes")).strip().lower() == mes.lower()),
             None
         )
 
