@@ -52,6 +52,9 @@ current_year = datetime.now().year
 years = list(range(2024, current_year + 3))
 year = st.selectbox("📅 Año", years, index=years.index(current_year))
 
+# ─────────────────────────────────────────
+# GOOGLE SHEETS
+# ─────────────────────────────────────────
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive"
@@ -61,6 +64,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
     dict(st.secrets["gcp_service_account"]),
     scope
 )
+
 client = gspread.authorize(creds)
 
 spreadsheet = client.open_by_url(
@@ -71,38 +75,20 @@ sheet = spreadsheet.worksheet("Hoja 1")
 
 HEADERS = ["Año", "Mes", "FG", "LG", "FPSI", "LPSI", "FPSI_V", "LPSI_V", "TOTAL"]
 
+# Nunca borrar nada
+if not sheet.row_values(1):
+    sheet.append_row(HEADERS)
 
+# ─────────────────────────────────────────
+# FUNCIONES
+# ─────────────────────────────────────────
 def safe_int(value):
     try:
         if value is None or value == "":
             return 0
         return int(float(value))
-    except Exception:
+    except:
         return 0
-
-
-def ensure_headers_safe(ws, headers):
-    first_row = ws.row_values(1)
-    if not first_row:
-        ws.append_row(headers)
-        return
-
-    normalized_existing = [str(x).strip() for x in first_row]
-    normalized_expected = [str(x).strip() for x in headers]
-
-    # Nunca borrar. Si no coincide, solo avisar.
-    if normalized_existing != normalized_expected:
-        st.warning("La cabecera de la hoja no coincide exactamente. No se ha borrado nada.")
-
-
-def make_backup_once(spreadsheet_obj, source_ws):
-    backup_name = f"Backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    backup_ws = spreadsheet_obj.add_worksheet(title=backup_name, rows=200, cols=20)
-    all_values = source_ws.get_all_values()
-    if all_values:
-        backup_ws.update("A1", all_values)
-    return backup_name
-
 
 def calc_colmenar(fg, lg, fpsi, lpsi):
     fijo = 800
@@ -111,13 +97,13 @@ def calc_colmenar(fg, lg, fpsi, lpsi):
     neto = bruto * 0.70
     return bruto, neto
 
-
 def calc_valdemoro(fpsi_v, lpsi_v):
+    fijo = 800  # ✅ CORREGIDO (antes 741)
+
     var = max((fpsi_v - lpsi_v - 3730), 0) * 0.30
-    bruto = var + 741
+    bruto = fijo + var
     neto = bruto * 0.70
     return bruto, neto
-
 
 def calcular_irpf(base):
     tramos = [
@@ -136,21 +122,24 @@ def calcular_irpf(base):
             anterior = limite
     return impuesto
 
-
-ensure_headers_safe(sheet, HEADERS)
-
+# ─────────────────────────────────────────
+# CARGA DATOS (TU VERSIÓN QUE FUNCIONA)
+# ─────────────────────────────────────────
 try:
     data_sheet = sheet.get_all_records()
-except Exception:
+except:
     data_sheet = []
 
 datos_por_mes = {}
 for row in data_sheet:
-    año = str(row.get("Año", "")).strip()
-    mes = str(row.get("Mes", "")).strip()
-    if año == str(year) and mes:
-        datos_por_mes[mes] = row
+    if str(row.get("Año", "")).strip() == str(year):
+        mes = str(row.get("Mes", "")).strip()
+        if mes:
+            datos_por_mes[mes] = row
 
+# ─────────────────────────────────────────
+# APP
+# ─────────────────────────────────────────
 meses = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
     "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
@@ -163,65 +152,76 @@ datos_guardar = []
 
 for mes in meses:
     st.header(f"📅 {mes}")
+
     d = datos_por_mes.get(mes, {})
+
     col1, col2 = st.columns(2, gap="large")
 
+    # 🔵 COLMENAR
     with col1:
         st.markdown('<div class="card-blue">', unsafe_allow_html=True)
         st.subheader("🔵 Colmenar")
 
-        fg = st.number_input("Fact General €", value=safe_int(d.get("FG", 0)), step=1, key=f"{mes}_fg")
-        lg = st.number_input("Lab General €", value=safe_int(d.get("LG", 0)), step=1, key=f"{mes}_lg")
-        fpsi = st.number_input("Fact PSI €", value=safe_int(d.get("FPSI", 0)), step=1, key=f"{mes}_fpsi")
-        lpsi = st.number_input("Lab PSI €", value=safe_int(d.get("LPSI", 0)), step=1, key=f"{mes}_lpsi")
+        fg = st.number_input("Fact General €", value=safe_int(d.get("FG", 0)), key=f"{mes}_fg")
+        lg = st.number_input("Lab General €", value=safe_int(d.get("LG", 0)), key=f"{mes}_lg")
+        fpsi = st.number_input("Fact PSI €", value=safe_int(d.get("FPSI", 0)), key=f"{mes}_fpsi")
+        lpsi = st.number_input("Lab PSI €", value=safe_int(d.get("LPSI", 0)), key=f"{mes}_lpsi")
 
         bruto_col, neto_col = calc_colmenar(fg, lg, fpsi, lpsi)
+
         st.metric("💶 Neto Colmenar", round(neto_col))
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # 🟢 VALDEMORO
     with col2:
         st.markdown('<div class="card-green">', unsafe_allow_html=True)
         st.subheader("🟢 Valdemoro")
 
-        fpsi_v = st.number_input("Fact PSI V €", value=safe_int(d.get("FPSI_V", 0)), step=1, key=f"{mes}_fpsi_v")
-        lpsi_v = st.number_input("Lab PSI V €", value=safe_int(d.get("LPSI_V", 0)), step=1, key=f"{mes}_lpsi_v")
+        fpsi_v = st.number_input("Fact PSI V €", value=safe_int(d.get("FPSI_V", 0)), key=f"{mes}_fpsi_v")
+        lpsi_v = st.number_input("Lab PSI V €", value=safe_int(d.get("LPSI_V", 0)), key=f"{mes}_lpsi_v")
 
         bruto_val, neto_val = calc_valdemoro(fpsi_v, lpsi_v)
+
         st.metric("💶 Neto Valdemoro", round(neto_val))
         st.markdown('</div>', unsafe_allow_html=True)
 
     total_mes = round(neto_col + neto_val)
+
     st.markdown(f'<div class="card-total">💰 TOTAL MES: {total_mes} €</div>', unsafe_allow_html=True)
 
     total_ingresos += bruto_col + bruto_val
     total_retenido += (bruto_col + bruto_val) * 0.30
+
     netos.append(total_mes)
 
     datos_guardar.append([str(year), mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes])
 
+# ─────────────────────────────────────────
+# GUARDAR
+# ─────────────────────────────────────────
 if st.button("💾 Guardar"):
-    try:
-        backup_name = make_backup_once(spreadsheet, sheet)
-        fresh = sheet.get_all_records()
 
-        for fila in datos_guardar:
-            año, mes = fila[0], fila[1]
-            fila_encontrada = None
+    data_sheet = sheet.get_all_records()
 
-            for i, row in enumerate(fresh):
-                if str(row.get("Año", "")).strip() == año and str(row.get("Mes", "")).strip() == mes:
-                    fila_encontrada = i + 2
-                    break
+    for fila in datos_guardar:
+        año, mes = fila[0], fila[1]
+        fila_encontrada = None
 
-            if fila_encontrada:
-                sheet.update(f"A{fila_encontrada}:I{fila_encontrada}", [fila])
-            else:
-                sheet.append_row(fila)
+        for i, row in enumerate(data_sheet):
+            if str(row.get("Año", "")).strip() == año and str(row.get("Mes", "")).strip() == mes:
+                fila_encontrada = i + 2
+                break
 
-        st.success(f"Guardado correcto. Backup creado: {backup_name}")
-    except Exception as e:
-        st.error(f"Error al guardar: {e}")
+        if fila_encontrada:
+            sheet.update(f"A{fila_encontrada}:I{fila_encontrada}", [fila])
+        else:
+            sheet.append_row(fila)
 
+    st.success("Guardado correcto 🔥")
+
+# ─────────────────────────────────────────
+# IRPF
+# ─────────────────────────────────────────
 st.header("📊 Hacienda")
 
 base = max(total_ingresos - 500 - 2000 - 5550, 0)
@@ -239,5 +239,8 @@ if resultado > 0:
 else:
     st.error(f"🔴 A pagar: {round(abs(resultado))} €")
 
+# ─────────────────────────────────────────
+# GRÁFICA
+# ─────────────────────────────────────────
 df = pd.DataFrame({"Mes": meses, "Cobro": netos})
 st.line_chart(df.set_index("Mes"))
