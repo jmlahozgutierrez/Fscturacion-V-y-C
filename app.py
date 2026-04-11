@@ -4,150 +4,139 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
-st.set_page_config(page_title="Facturación Clínica PRO", layout="wide")
+st.set_page_config(page_title="Facturación PRO", layout="wide")
 
-# ─────────────────────────────────────────
-# GOOGLE SHEETS
-# ─────────────────────────────────────────
-@st.cache_resource
-def get_data():
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive"
-    ]
-
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        dict(st.secrets["gcp_service_account"]), scope
-    )
-
-    client = gspread.authorize(creds)
-
-    sheet = client.open_by_url(
-        "https://docs.google.com/spreadsheets/d/1JgpD7qiclpmTuLoHDWCIWdtJ5DPdZKeURFwkXv3_e7U/edit"
-    ).sheet1
-
-    data = sheet.get_all_values()
-
-    headers = data[0]
-    rows = data[1:]
-
-    df = pd.DataFrame(rows, columns=headers)
-
-    return df, sheet
-
-# ─────────────────────────────────────────
-# UTIL
-# ─────────────────────────────────────────
-def safe_int(x):
-    try:
-        return int(float(x))
-    except:
-        return 0
-
-# ─────────────────────────────────────────
-# CÁLCULOS REALES
-# ─────────────────────────────────────────
-def calc_colaboradora(fg, lg, fpsi, lpsi):
-    fijo = 800
-
-    minimo_general  = 16852 / 11
-    minimo_prostodo = 17140 / 11
-
-    var_gen = max(0, (fg - minimo_general)) * 0.35 - (lg * 0.35)
-    var_psi = max(0, (fpsi - minimo_prostodo)) * 0.30 - (lpsi * 0.30)
-
-    variable = max(0, var_gen) + max(0, var_psi)
-
-    bruto = fijo + variable
-    neto  = bruto * 0.70
-
-    return bruto, neto
-
-def calc_voluntaria(fpsi_v, lpsi_v):
-    fijo = 800
-
-    minimo_valdemoro = 41036 / 11
-
-    var = max(0, (fpsi_v - minimo_valdemoro)) * 0.30 - (lpsi_v * 0.30)
-
-    variable = max(0, var)
-
-    bruto = fijo + variable
-    neto  = bruto * 0.70
-
-    return bruto, neto
-
-# ─────────────────────────────────────────
-# APP
-# ─────────────────────────────────────────
 st.title("💰 Facturación Clínica PRO")
 
+# ---------------- AÑO ----------------
 current_year = datetime.now().year
-year = st.selectbox("Año", list(range(2024, current_year+2)), index=1)
+years = list(range(2024, current_year + 3))
+year = st.selectbox("📅 Año", years, index=years.index(current_year))
 
-df, sheet = get_data()
-
-# LIMPIEZA
-df["Año"] = df["Año"].apply(safe_int)
-df["Mes"] = df["Mes"].astype(str).str.strip().str.lower()
-
-df = df[df["Año"] == year]
-
-datos_por_mes = {
-    row["Mes"]: row for _, row in df.iterrows()
-}
-
-MESES = [
-    "enero","febrero","marzo","abril","mayo","junio",
-    "julio","agosto","septiembre","octubre","noviembre","diciembre"
+# ---------------- CONEXIÓN ----------------
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
 ]
 
-total_bruto = 0
+creds = ServiceAccountCredentials.from_json_keyfile_dict(
+    dict(st.secrets["gcp_service_account"]),
+    scope
+)
+
+client = gspread.authorize(creds)
+
+sheet = client.open_by_url(
+    "https://docs.google.com/spreadsheets/d/1JgpD7qiclpmTuLoHDWCIWdtJ5DPdZKeURFwkXv3_e7U/edit"
+).worksheet("Hoja 1")
+
+# ---------------- CABECERA SEGURA ----------------
+headers = ["Año","Mes","FG","LG","FPSI","LPSI","FPSI_V","LPSI_V","TOTAL"]
+
+if not sheet.row_values(1):
+    sheet.append_row(headers)
+
+# ---------------- CARGAR DATOS ----------------
+try:
+    data_sheet = sheet.get_all_records()
+except:
+    data_sheet = []
+
+datos_por_mes = {}
+
+for row in data_sheet:
+    if str(row.get("Año")).strip() == str(year):
+        mes_limpio = str(row.get("Mes", "")).strip()
+        datos_por_mes[mes_limpio] = row
+
+# ---------------- VARIABLES ----------------
+meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+         "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+
+total_ingresos = 0
 total_retenido = 0
 netos = []
+datos_guardar = []
 
-for mes in MESES:
+# ---------------- LOOP ----------------
+for mes in meses:
 
-    st.header(mes.capitalize())
-
-    d = datos_por_mes.get(mes, {})
+    st.header(f"📅 {mes}")
 
     col1, col2 = st.columns(2)
 
-    with col1:
-        fg = st.number_input("Fact General", value=safe_int(d.get("FG",0)), key=mes+"fg")
-        lg = st.number_input("Lab General", value=safe_int(d.get("LG",0)), key=mes+"lg")
-        fpsi = st.number_input("Fact PSI", value=safe_int(d.get("FPSI",0)), key=mes+"fpsi")
-        lpsi = st.number_input("Lab PSI", value=safe_int(d.get("LPSI",0)), key=mes+"lpsi")
+    d = datos_por_mes.get(mes.strip(), {})
 
-        bruto_col, neto_col = calc_colaboradora(fg, lg, fpsi, lpsi)
+    with col1:
+        fg = st.number_input("Fact General €", value=int(d.get("FG", 0)), step=1, key=mes+"fg")
+        lg = st.number_input("Lab General €", value=int(d.get("LG", 0)), step=1, key=mes+"lg")
+        fpsi = st.number_input("Fact PSI €", value=int(d.get("FPSI", 0)), step=1, key=mes+"fpsi")
+        lpsi = st.number_input("Lab PSI €", value=int(d.get("LPSI", 0)), step=1, key=mes+"lpsi")
+
+        fijo = 800
+        variable = max(0,(fg - 1404 - lg)*0.35 + (fpsi - 1428 - lpsi)*0.30)
+
+        bruto_col = fijo + variable
+        neto_col = bruto_col * 0.70
 
         st.metric("Neto Colmenar", round(neto_col))
 
     with col2:
-        fpsi_v = st.number_input("Fact PSI V", value=safe_int(d.get("FPSI_V",0)), key=mes+"fpsi_v")
-        lpsi_v = st.number_input("Lab PSI V", value=safe_int(d.get("LPSI_V",0)), key=mes+"lpsi_v")
+        fpsi_v = st.number_input("Fact PSI V €", value=int(d.get("FPSI_V", 0)), step=1, key=mes+"fpsi_v")
+        lpsi_v = st.number_input("Lab PSI V €", value=int(d.get("LPSI_V", 0)), step=1, key=mes+"lpsi_v")
 
-        bruto_vol, neto_vol = calc_voluntaria(fpsi_v, lpsi_v)
+        var = max((fpsi_v - lpsi_v - 3730),0)*0.30
+        bruto_val = var + 741
+        neto_val = bruto_val * 0.70
 
-        st.metric("Neto Valdemoro", round(neto_vol))
+        st.metric("Neto Valdemoro", round(neto_val))
 
-    total_mes = round(neto_col + neto_vol)
-    st.success(f"TOTAL: {total_mes} €")
+    total_mes = round(neto_col + neto_val)
+    st.success(f"💰 TOTAL: {total_mes} €")
 
-    total_bruto += bruto_col + bruto_vol
-    total_retenido += (bruto_col + bruto_vol) * 0.30
+    total_ingresos += bruto_col + bruto_val
+    total_retenido += (bruto_col + bruto_val) * 0.30
 
     netos.append(total_mes)
 
-# ─────────────────────────────────────────
-# RESUMEN
-# ─────────────────────────────────────────
-st.divider()
+    datos_guardar.append([
+        str(year), mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
+    ])
 
-st.metric("Bruto total", round(total_bruto))
+# ---------------- GUARDAR ----------------
+if st.button("💾 Guardar"):
+
+    data_sheet = sheet.get_all_records()
+
+    for fila in datos_guardar:
+
+        año = fila[0]
+        mes = fila[1]
+
+        fila_encontrada = None
+
+        for i, row in enumerate(data_sheet):
+            if str(row.get("Año")).strip() == año and str(row.get("Mes")).strip() == mes:
+                fila_encontrada = i + 2
+                break
+
+        if fila_encontrada:
+            sheet.update(f"A{fila_encontrada}:I{fila_encontrada}", [fila])
+        else:
+            sheet.append_row(fila)
+
+    st.success("Guardado correcto 🔥")
+
+# ---------------- RESUMEN ----------------
+st.header("📊 Hacienda")
+
+st.metric("Ingresos", round(total_ingresos))
 st.metric("Retenido", round(total_retenido))
-st.metric("Neto total", round(total_bruto - total_retenido))
 
-df_chart = pd.DataFrame({"Mes": MESES, "Neto": netos})
-st.line_chart(df_chart.set_index("Mes"))
+# ---------------- GRÁFICA ----------------
+df = pd.DataFrame({
+    "Mes": meses,
+    "Cobro": netos
+})
+
+st.line_chart(df.set_index("Mes"))
