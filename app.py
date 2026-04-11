@@ -7,7 +7,7 @@ from datetime import datetime
 st.set_page_config(page_title="Facturación Clínica PRO", layout="wide")
 
 # ─────────────────────────────────────────
-# GOOGLE SHEETS (LECTURA ROBUSTA)
+# GOOGLE SHEETS
 # ─────────────────────────────────────────
 @st.cache_resource
 def get_data():
@@ -45,6 +45,39 @@ def safe_int(x):
         return 0
 
 # ─────────────────────────────────────────
+# CÁLCULOS REALES
+# ─────────────────────────────────────────
+def calc_colaboradora(fg, lg, fpsi, lpsi):
+    fijo = 800
+
+    minimo_general  = 16852 / 11
+    minimo_prostodo = 17140 / 11
+
+    var_gen = max(0, (fg - minimo_general)) * 0.35 - (lg * 0.35)
+    var_psi = max(0, (fpsi - minimo_prostodo)) * 0.30 - (lpsi * 0.30)
+
+    variable = max(0, var_gen) + max(0, var_psi)
+
+    bruto = fijo + variable
+    neto  = bruto * 0.70
+
+    return bruto, neto
+
+def calc_voluntaria(fpsi_v, lpsi_v):
+    fijo = 800
+
+    minimo_valdemoro = 41036 / 11
+
+    var = max(0, (fpsi_v - minimo_valdemoro)) * 0.30 - (lpsi_v * 0.30)
+
+    variable = max(0, var)
+
+    bruto = fijo + variable
+    neto  = bruto * 0.70
+
+    return bruto, neto
+
+# ─────────────────────────────────────────
 # APP
 # ─────────────────────────────────────────
 st.title("💰 Facturación Clínica PRO")
@@ -54,7 +87,7 @@ year = st.selectbox("Año", list(range(2024, current_year+2)), index=1)
 
 df, sheet = get_data()
 
-# 🔥 LIMPIEZA CLAVE
+# LIMPIEZA
 df["Año"] = df["Año"].apply(safe_int)
 df["Mes"] = df["Mes"].astype(str).str.strip().str.lower()
 
@@ -72,7 +105,6 @@ MESES = [
 total_bruto = 0
 total_retenido = 0
 netos = []
-datos_guardar = []
 
 for mes in MESES:
 
@@ -88,25 +120,34 @@ for mes in MESES:
         fpsi = st.number_input("Fact PSI", value=safe_int(d.get("FPSI",0)), key=mes+"fpsi")
         lpsi = st.number_input("Lab PSI", value=safe_int(d.get("LPSI",0)), key=mes+"lpsi")
 
+        bruto_col, neto_col = calc_colaboradora(fg, lg, fpsi, lpsi)
+
+        st.metric("Neto Colmenar", round(neto_col))
+
     with col2:
         fpsi_v = st.number_input("Fact PSI V", value=safe_int(d.get("FPSI_V",0)), key=mes+"fpsi_v")
         lpsi_v = st.number_input("Lab PSI V", value=safe_int(d.get("LPSI_V",0)), key=mes+"lpsi_v")
 
-    # cálculo simple para probar
-    total_mes = fg - lg + fpsi - lpsi + fpsi_v - lpsi_v
+        bruto_vol, neto_vol = calc_voluntaria(fpsi_v, lpsi_v)
 
-    st.success(f"TOTAL: {total_mes}")
+        st.metric("Neto Valdemoro", round(neto_vol))
 
-    datos_guardar.append([year, mes.capitalize(), fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes])
+    total_mes = round(neto_col + neto_vol)
+    st.success(f"TOTAL: {total_mes} €")
+
+    total_bruto += bruto_col + bruto_vol
+    total_retenido += (bruto_col + bruto_vol) * 0.30
+
+    netos.append(total_mes)
 
 # ─────────────────────────────────────────
-# GUARDAR
+# RESUMEN
 # ─────────────────────────────────────────
-if st.button("Guardar"):
-    for fila in datos_guardar:
-        sheet.append_row(fila)
+st.divider()
 
-    st.success("Guardado")
+st.metric("Bruto total", round(total_bruto))
+st.metric("Retenido", round(total_retenido))
+st.metric("Neto total", round(total_bruto - total_retenido))
 
-# DEBUG
-st.write("Datos cargados:", datos_por_mes)
+df_chart = pd.DataFrame({"Mes": MESES, "Neto": netos})
+st.line_chart(df_chart.set_index("Mes"))
