@@ -99,6 +99,19 @@ for mes in meses:
 
     netos.append(total_mes)
 
+    # 🚨 ALERTA TRAMOS
+    base_acumulada = total_ingresos - 500 - 2000 - 5550
+    base_acumulada = max(0, base_acumulada)
+
+    if 18000 < base_acumulada < 20200:
+        st.warning("⚠️ Cerca de subir a tramo 24%")
+
+    if 33000 < base_acumulada < 35200:
+        st.warning("⚠️ Cerca de subir a tramo 30%")
+
+    if base_acumulada > 60000:
+        st.error("🚨 Tramo alto 37%")
+
     datos_guardar.append([
         str(year), mes, fg, lg, fpsi, lpsi, fpsi_v, lpsi_v, total_mes
     ])
@@ -127,11 +140,44 @@ if st.button("💾 Guardar"):
 
     st.success("Guardado correcto 🔥")
 
-# ---------------- RESUMEN ----------------
+# ---------------- IRPF ----------------
 st.header("📊 Hacienda")
+
+def calcular_irpf(base):
+    tramos = [
+        (12450, 0.19),
+        (20200, 0.24),
+        (35200, 0.30),
+        (60000, 0.37),
+        (9999999, 0.45)
+    ]
+
+    impuesto = 0
+    anterior = 0
+
+    for limite, tipo in tramos:
+        if base > anterior:
+            tramo = min(base, limite) - anterior
+            impuesto += tramo * tipo
+            anterior = limite
+
+    return impuesto
+
+base = total_ingresos - 500 - 2000 - 5550
+base = max(base, 0)
+
+irpf_real = calcular_irpf(base)
+resultado = total_retenido - irpf_real
 
 st.metric("Ingresos", round(total_ingresos))
 st.metric("Retenido", round(total_retenido))
+st.metric("Base imponible", round(base))
+st.metric("IRPF real", round(irpf_real))
+
+if resultado > 0:
+    st.success(f"🟢 Hacienda te devuelve: {round(resultado)} €")
+else:
+    st.error(f"🔴 A pagar: {round(abs(resultado))} €")
 
 # ---------------- GRÁFICA ----------------
 df = pd.DataFrame({
